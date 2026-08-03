@@ -1,0 +1,12 @@
+{
+  "custom/agent-session-opencode": {
+    "exec": "agent-session-status watch --format waybar --provider opencode --source local",
+    "return-type": "json",
+    "format": "{text}",
+    "escape": false,
+    "tooltip": true,
+    "hide-empty-text": true,
+    "exec-on-event": false,
+    "restart-interval": 2
+  }
+}

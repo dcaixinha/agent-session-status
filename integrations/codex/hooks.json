@@ -1,0 +1,50 @@
+{
+  "description": "Publish Codex lifecycle state for agent-session-status.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex", "timeout": 3 }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status event codex" }]
+      }
+    ]
+  }
+}

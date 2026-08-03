@@ -1,0 +1,75 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt|agent_needs_input",
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ],
+    "ElicitationResult": [
+      {
+        "hooks": [{ "type": "command", "command": "agent-session-status", "args": ["event", "claude"] }]
+      }
+    ]
+  }
+}

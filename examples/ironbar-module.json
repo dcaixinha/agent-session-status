@@ -1,0 +1,46 @@
+{
+  "type": "custom",
+  "name": "agent-session-status-opencode",
+  "class": "agent-session-status",
+  "show_if": "poll:1000:agent-session-status active --provider opencode --source local",
+  "transition_type": "slide_end",
+  "bar": [
+    {
+      "type": "button",
+      "class": "agent-session-provider",
+      "on_click": "popup:toggle",
+      "widgets": [
+        {
+          "type": "image",
+          "class": "agent-session-provider-logo",
+          "src": "{{poll:1000:agent-session-status asset opencode}}",
+          "size": 16
+        },
+        {
+          "type": "label",
+          "label": "{{watch:agent-session-status watch --format ironbar --provider opencode --source local --hide-provider}}"
+        }
+      ]
+    }
+  ],
+  "popup": [
+    {
+      "type": "box",
+      "class": "agent-session-popup",
+      "orientation": "vertical",
+      "widgets": [
+        {
+          "type": "label",
+          "class": "agent-session-popup-title",
+          "label": "OpenCode sessions"
+        },
+        {
+          "type": "label",
+          "class": "agent-session-popup-details",
+          "justify": "left",
+          "label": "{{poll:3000:agent-session-status render --format popup --provider opencode --source local}}"
+        }
+      ]
+    }
+  ]
+}

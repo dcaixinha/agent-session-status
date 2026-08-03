@@ -1,0 +1,34 @@
+/* The label itself is colored with Pango markup for each provider segment. */
+.widget.agent-session-status {
+    padding: 2px 4px;
+    margin: 4px 3px;
+}
+
+.agent-session-status label {
+    font-weight: 600;
+}
+
+.agent-session-status button.agent-session-provider {
+    padding: 0 2px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.agent-session-provider-logo {
+    margin-right: 3px;
+}
+
+.agent-session-popup {
+    min-width: 280px;
+}
+
+.agent-session-popup-title {
+    font-size: 1.25em;
+    font-weight: bold;
+    margin-bottom: 18px;
+}
+
+.agent-session-popup-details {
+    font-weight: normal;
+    margin-top: 4px;
+}

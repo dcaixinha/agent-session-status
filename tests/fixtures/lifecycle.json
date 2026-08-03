@@ -1,0 +1,63 @@
+[
+  {
+    "provider": "opencode",
+    "session_key": "opencode:oc-1",
+    "event": {
+      "type": "session.created",
+      "properties": { "info": { "id": "oc-1", "directory": "/tmp/opencode" } }
+    },
+    "expected": "idle"
+  },
+  {
+    "provider": "opencode",
+    "session_key": "opencode:oc-1",
+    "event": {
+      "type": "session.status",
+      "properties": { "sessionID": "oc-1", "status": { "type": "busy" } }
+    },
+    "expected": "working"
+  },
+  {
+    "provider": "claude",
+    "session_key": "claude:claude-1",
+    "event": {
+      "hook_event_name": "UserPromptSubmit",
+      "session_id": "claude-1",
+      "cwd": "/tmp/claude"
+    },
+    "expected": "working"
+  },
+  {
+    "provider": "claude",
+    "session_key": "claude:claude-1",
+    "event": {
+      "hook_event_name": "PermissionRequest",
+      "session_id": "claude-1",
+      "cwd": "/tmp/claude",
+      "tool_use_id": "tool-1"
+    },
+    "expected": "waiting"
+  },
+  {
+    "provider": "codex",
+    "session_key": "codex:codex-1",
+    "event": {
+      "hook_event_name": "SessionStart",
+      "session_id": "codex-1",
+      "cwd": "/tmp/codex",
+      "source": "startup"
+    },
+    "expected": "idle"
+  },
+  {
+    "provider": "codex",
+    "session_key": "codex:codex-1",
+    "event": {
+      "hook_event_name": "UserPromptSubmit",
+      "session_id": "codex-1",
+      "cwd": "/tmp/codex",
+      "turn_id": "turn-1"
+    },
+    "expected": "working"
+  }
+]
