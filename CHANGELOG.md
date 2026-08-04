@@ -19,6 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Collision-safe remote identities, strict snapshot validation, escaped untrusted Pango content, private tint caches, and atomic cache writes.
+- Collision-safe remote identities, strict snapshot validation, escaped untrusted Pango content, private state and tint caches, and atomic cache writes.
 
 [Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.0...HEAD

@@ -302,7 +302,7 @@ The default icon mode uses Font Awesome question-circle for waiting, gears for w
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `AGENT_SESSION_STATUS_STATE_DIR` | Runtime state override; same as global `--state-dir`. | `${XDG_RUNTIME_DIR:-<system temp>}/agent-session-status` |
+| `AGENT_SESSION_STATUS_STATE_DIR` | Runtime state override; same as global `--state-dir`. | `$XDG_RUNTIME_DIR/agent-session-status`, with a boot-scoped XDG cache fallback |
 | `AGENT_SESSION_STATUS_THEME` | Asset theme: `light`, `dark`, or automatic behavior for other values. | `auto` |
 | `AGENT_SESSION_STATUS_COLOR_WAITING` | Waiting text/status tint. | `#e0af68` |
 | `AGENT_SESSION_STATUS_COLOR_WORKING` | Working text/status tint. | `#9ece6a` |
@@ -474,7 +474,7 @@ Use `agent-session-status <command> --help` as the authoritative option list for
 
 ## State and Lifecycle
 
-Runtime state defaults to `${XDG_RUNTIME_DIR:-<system temp>}/agent-session-status/state.json`; the sibling `state.lock` serializes readers and writers. Alert configuration instead uses XDG config, installed assets use XDG data, and tinted assets use XDG runtime storage with an XDG cache fallback. These paths intentionally serve different lifetimes.
+Runtime state defaults to `$XDG_RUNTIME_DIR/agent-session-status/state.json`, falling back to `${XDG_CACHE_HOME:-$HOME/.cache}/agent-session-status-<boot-id>/state.json` when no runtime directory is available. The XDG runtime root must already exist, belong to the current UID, and have mode `0700`; cache roots must belong to the current UID and not be group/other-writable. The application directory is atomically created with mode `0700` and contains the sibling `state.lock` that serializes readers and writers. Relative XDG paths fail closed, while empty variables are treated as unset. Including Linux's boot ID in the cache fallback prevents PID/start-time identities from carrying into another boot. Alert configuration instead uses XDG config, installed assets use XDG data, and tinted assets use XDG runtime storage with an XDG cache fallback. These paths intentionally serve different lifetimes.
 
 Writes serialize to `state.json.<writer-pid>.tmp` and atomically rename it over `state.json` while holding an exclusive lock. State is rewritten only when it changed.
 

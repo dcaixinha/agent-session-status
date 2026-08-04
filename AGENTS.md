@@ -26,6 +26,7 @@
 - The store must remain lock-protected and atomic. Preserve read/prune/update/prune/write ordering and compute alerts only from sessions present in both transaction states.
 - PID liveness must compare Linux process-start ticks, not PID alone. PID-less local state has the 24-hour limit; imported state uses TTL.
 - `watch` must retain filesystem-driven updates and periodic refresh so TTL/stale pruning appears during quiet periods.
+- The default state directory must use a pre-existing owner-controlled `0700` XDG runtime root or a non-writable-by-others XDG cache root. Its application directory remains owner-controlled mode `0700`; reject wrong-owner, symlink, file, insecure-mode, or relative-path candidates, treat empty XDG values as unset, and scope cache fallback state by Linux boot ID.
 
 ## Provider and remote boundaries
 

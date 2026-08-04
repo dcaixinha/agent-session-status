@@ -1,5 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -22,9 +24,13 @@ pub struct Store {
 
 impl Store {
     pub fn new(override_dir: Option<PathBuf>) -> Result<Self> {
-        let dir = override_dir.unwrap_or_else(default_state_dir);
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create state directory {}", dir.display()))?;
+        let dir = if let Some(dir) = override_dir {
+            fs::create_dir_all(&dir)
+                .with_context(|| format!("failed to create state directory {}", dir.display()))?;
+            dir
+        } else {
+            default_state_dir()?
+        };
         Ok(Self {
             state_path: dir.join("state.json"),
             lock_path: dir.join("state.lock"),
@@ -167,11 +173,121 @@ fn idle_transitions(before: &State, after: &State) -> Vec<Session> {
         .collect()
 }
 
-fn default_state_dir() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("agent-session-status")
+fn default_state_dir() -> Result<PathBuf> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR");
+    let boot_id = if runtime
+        .as_deref()
+        .is_some_and(|value| !value.as_bytes().is_empty())
+    {
+        String::new()
+    } else {
+        fs::read_to_string("/proc/sys/kernel/random/boot_id")?
+    };
+    let location = default_state_location(
+        runtime.as_deref(),
+        std::env::var_os("XDG_CACHE_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+        boot_id.trim(),
+    )?;
+    let uid = fs::metadata("/proc/self")?.uid();
+    prepare_state_root(&location.root, uid, location.create_root)?;
+    create_private_state_dir(&location.root, &location.name, uid)
+}
+
+struct StateLocation {
+    root: PathBuf,
+    name: String,
+    create_root: bool,
+}
+
+fn default_state_location(
+    runtime: Option<&std::ffi::OsStr>,
+    cache: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+    boot_id: &str,
+) -> Result<StateLocation> {
+    if let Some(runtime) = runtime.filter(|value| !value.as_bytes().is_empty()) {
+        let runtime = PathBuf::from(runtime);
+        if !runtime.is_absolute() {
+            anyhow::bail!("XDG_RUNTIME_DIR must be an absolute path");
+        }
+        return Ok(StateLocation {
+            root: runtime,
+            name: "agent-session-status".to_owned(),
+            create_root: false,
+        });
+    }
+    let cache = if let Some(cache) = cache.filter(|value| !value.as_bytes().is_empty()) {
+        let cache = PathBuf::from(cache);
+        if !cache.is_absolute() {
+            anyhow::bail!("XDG_CACHE_HOME must be an absolute path");
+        }
+        cache
+    } else {
+        let home = home
+            .filter(|value| !value.as_bytes().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("HOME is unavailable"))?;
+        let home = PathBuf::from(home);
+        if !home.is_absolute() {
+            anyhow::bail!("HOME must be an absolute path");
+        }
+        home.join(".cache")
+    };
+    if boot_id.is_empty()
+        || !boot_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        anyhow::bail!("Linux boot ID is invalid");
+    }
+    Ok(StateLocation {
+        root: cache,
+        name: format!("agent-session-status-{boot_id}"),
+        create_root: true,
+    })
+}
+
+fn prepare_state_root(root: &Path, uid: u32, create: bool) -> Result<()> {
+    if create {
+        fs::create_dir_all(root)
+            .with_context(|| format!("failed to create state root {}", root.display()))?;
+    }
+    let metadata = fs::symlink_metadata(root)
+        .with_context(|| format!("state root is unavailable: {}", root.display()))?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if !metadata.is_dir()
+        || metadata.uid() != uid
+        || if create {
+            mode & 0o022 != 0
+        } else {
+            mode != 0o700
+        }
+    {
+        anyhow::bail!("state root is not secure: {}", root.display());
+    }
+    Ok(())
+}
+
+fn create_private_state_dir(root: &Path, name: &str, uid: u32) -> Result<PathBuf> {
+    let directory = root.join(name);
+    match fs::DirBuilder::new().mode(0o700).create(&directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("failed to create state directory {}", directory.display())
+            });
+        }
+    }
+    let metadata = fs::symlink_metadata(&directory)?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if !metadata.is_dir() || metadata.uid() != uid || mode != 0o700 {
+        anyhow::bail!(
+            "state directory is not a private user directory: {}",
+            directory.display()
+        );
+    }
+    Ok(directory)
 }
 
 fn read_state(path: &Path) -> Result<State> {
@@ -220,6 +336,7 @@ pub fn now() -> u64 {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::os::unix::fs::PermissionsExt;
 
     use crate::model::{Session, SessionKind, Status};
 
@@ -242,6 +359,74 @@ mod tests {
             process_start: None,
             updated_at: now(),
         }
+    }
+
+    #[test]
+    fn default_state_location_prefers_runtime_then_cache_then_home() {
+        let runtime =
+            default_state_location(Some("/run/user/1000".as_ref()), None, None, "boot-id").unwrap();
+        assert_eq!(runtime.root, PathBuf::from("/run/user/1000"));
+        assert_eq!(runtime.name, "agent-session-status");
+        assert!(!runtime.create_root);
+
+        let cache = default_state_location(
+            Some("".as_ref()),
+            Some("/var/cache/user".as_ref()),
+            None,
+            "boot-id",
+        )
+        .unwrap();
+        assert_eq!(cache.root, PathBuf::from("/var/cache/user"));
+        assert_eq!(cache.name, "agent-session-status-boot-id");
+        assert!(cache.create_root);
+
+        let home = default_state_location(
+            None,
+            Some("".as_ref()),
+            Some("/home/user".as_ref()),
+            "boot-id",
+        )
+        .unwrap();
+        assert_eq!(home.root, PathBuf::from("/home/user/.cache"));
+        assert!(default_state_location(Some("relative".as_ref()), None, None, "boot-id").is_err());
+        assert!(default_state_location(None, Some("relative".as_ref()), None, "boot-id").is_err());
+        assert!(default_state_location(None, None, None, "boot-id").is_err());
+        assert!(
+            default_state_location(None, None, Some("/home/user".as_ref()), "invalid/id").is_err()
+        );
+    }
+
+    #[test]
+    fn state_roots_and_private_directories_fail_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let uid = fs::metadata("/proc/self").unwrap().uid();
+        fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        prepare_state_root(temp.path(), uid, false).unwrap();
+        let directory = temp.path().join("agent-session-status");
+        assert_eq!(
+            create_private_state_dir(temp.path(), "agent-session-status", uid).unwrap(),
+            directory
+        );
+        assert_eq!(
+            fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let unsafe_root = temp.path().join("unsafe");
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&unsafe_root)
+            .unwrap();
+        fs::write(unsafe_root.join("agent-session-status"), b"not a directory").unwrap();
+        assert!(create_private_state_dir(&unsafe_root, "agent-session-status", uid).is_err());
+
+        let writable_root = temp.path().join("writable");
+        fs::DirBuilder::new()
+            .mode(0o777)
+            .create(&writable_root)
+            .unwrap();
+        fs::set_permissions(&writable_root, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(prepare_state_root(&writable_root, uid, true).is_err());
     }
 
     #[test]
