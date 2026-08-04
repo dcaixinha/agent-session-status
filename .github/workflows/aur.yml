@@ -1,0 +1,221 @@
+name: Publish AUR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag, for example v0.1.0
+        required: true
+        type: string
+      pkgrel:
+        description: Arch package release number
+        required: true
+        default: "1"
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: aur-agent-session-status
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+  PKGREL: ${{ github.event_name == 'workflow_dispatch' && inputs.pkgrel || '1' }}
+
+jobs:
+  package:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm cargo curl git jq namcap
+
+      - name: Check out release tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Validate release and render PKGBUILD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PKGREL" =~ ^[1-9][0-9]*$ ]]
+
+          release=$(curl --fail --silent --show-error --location \
+            --retry 3 --proto '=https' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          jq -e --arg tag "$RELEASE_TAG" \
+            '.tag_name == $tag and .draft == false and .prerelease == false' \
+            <<<"$release" >/dev/null
+
+          version=${RELEASE_TAG#v}
+          cargo_version=$(cargo metadata --no-deps --locked --format-version 1 \
+            | jq -r '.packages[] | select(.name == "agent-session-status") | .version')
+          [[ "$cargo_version" == "$version" ]]
+          [[ "$(git describe --tags --exact-match)" == "$RELEASE_TAG" ]]
+
+          archive="$RUNNER_TEMP/agent-session-status-$version.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --proto '=https' \
+            "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$RELEASE_TAG.tar.gz" \
+            --output "$archive"
+          checksum=$(sha256sum "$archive" | cut -d' ' -f1)
+
+          mkdir -p aur-stage
+          sed \
+            -e "s/@PKGVER@/$version/g" \
+            -e "s/@PKGREL@/$PKGREL/g" \
+            -e "s/@SHA256@/$checksum/g" \
+            packaging/aur/PKGBUILD.template > aur-stage/PKGBUILD
+          cp packaging/aur/LICENSE aur-stage/LICENSE
+
+          ! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' aur-stage/PKGBUILD
+          useradd --create-home builder
+          chown -R builder:builder aur-stage
+
+      - name: Build and test Arch package
+        working-directory: aur-stage
+        run: |
+          set -euo pipefail
+          runuser -u builder -- makepkg --verifysource --noconfirm
+          runuser -u builder -- makepkg --cleanbuild --check --noconfirm
+          runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
+          chown root:root .SRCINFO
+
+          namcap PKGBUILD || true
+          version=${RELEASE_TAG#v}
+          package="agent-session-status-$version-$PKGREL-x86_64.pkg.tar.zst"
+          [[ -f "$package" ]]
+          namcap "$package" || true
+          grep -q '^pkgbase = agent-session-status$' .SRCINFO
+          grep -q '^[[:space:]]*pkgver = ' .SRCINFO
+          grep -q '^[[:space:]]*pkgrel = ' .SRCINFO
+          ! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' PKGBUILD .SRCINFO
+
+      - name: Upload tested AUR metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: aur-metadata
+          path: |
+            aur-stage/PKGBUILD
+            aur-stage/.SRCINFO
+            aur-stage/LICENSE
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    environment: aur
+    steps:
+      - name: Download tested AUR metadata
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: aur-metadata
+          path: metadata
+
+      - name: Validate publication inputs
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PKGREL" =~ ^[1-9][0-9]*$ ]]
+          for file in PKGBUILD .SRCINFO LICENSE; do
+            [[ -f "metadata/$file" && ! -L "metadata/$file" ]]
+          done
+          ! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' \
+            metadata/PKGBUILD metadata/.SRCINFO
+
+      - name: Configure verified AUR SSH access
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$AUR_SSH_PRIVATE_KEY" ]]
+          umask 077
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/aur_key"
+          ssh-keyscan -T 10 -t ed25519 aur.archlinux.org > "$RUNNER_TEMP/aur_known_hosts"
+          fingerprint=$(ssh-keygen -lf "$RUNNER_TEMP/aur_known_hosts" -E sha256 \
+            | awk '{print $2}')
+          [[ "$fingerprint" == 'SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4' ]]
+          chmod 600 "$RUNNER_TEMP/aur_key" "$RUNNER_TEMP/aur_known_hosts"
+
+      - name: Publish metadata to AUR
+        env:
+          GIT_SSH_COMMAND: ssh -i ${{ runner.temp }}/aur_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${{ runner.temp }}/aur_known_hosts
+        run: |
+          set -euo pipefail
+          rpc=$(curl --fail --silent --show-error --location --retry 3 --proto '=https' \
+            'https://aur.archlinux.org/rpc/v5/info?arg[]=agent-session-status')
+          count=$(jq -r '.resultcount' <<<"$rpc")
+          if [[ "$count" == 1 ]]; then
+            [[ "$(jq -r '.results[0].Maintainer' <<<"$rpc")" == dcaixinha ]]
+          else
+            [[ "$count" == 0 ]]
+          fi
+
+          git -c init.defaultBranch=master clone \
+            ssh://aur@aur.archlinux.org/agent-session-status.git aur-repo
+          cd aur-repo
+          if [[ "$count" == 0 && -n "$(git rev-list --all --max-count=1)" ]]; then
+            echo 'AUR name has unexpected deleted-package history; review manually.' >&2
+            exit 1
+          fi
+
+          unexpected=$(git ls-files | grep -Ev '^(PKGBUILD|\.SRCINFO|LICENSE)$' || true)
+          [[ -z "$unexpected" ]]
+
+          version=${RELEASE_TAG#v}
+          current_version=
+          current_pkgrel=
+          if [[ -f PKGBUILD ]]; then
+            current_version=$(awk -F= '/^pkgver=/{print $2; exit}' PKGBUILD)
+            current_pkgrel=$(awk -F= '/^pkgrel=/{print $2; exit}' PKGBUILD)
+            [[ "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            [[ "$current_pkgrel" =~ ^[1-9][0-9]*$ ]]
+            if [[ "$version" == "$current_version" ]]; then
+              (( PKGREL >= current_pkgrel ))
+            else
+              newest=$(printf '%s\n%s\n' "$current_version" "$version" | sort -V | tail -n1)
+              [[ "$newest" == "$version" && "$version" != "$current_version" ]]
+            fi
+          fi
+
+          if [[ -z "$current_version" || "$version" != "$current_version" ]]; then
+            [[ "$PKGREL" == 1 ]]
+          fi
+
+          cp ../metadata/PKGBUILD ../metadata/.SRCINFO ../metadata/LICENSE .
+          git diff --check
+
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo 'AUR metadata is already current.'
+            exit 0
+          fi
+          if [[ "$version" == "$current_version" && "$PKGREL" == "$current_pkgrel" ]]; then
+            echo 'Changed AUR metadata requires a greater pkgrel.' >&2
+            exit 1
+          fi
+
+          git config user.name 'Daniel Caixinha'
+          git config user.email '2683004+dcaixinha@users.noreply.github.com'
+          git add PKGBUILD .SRCINFO LICENSE
+          git commit -m "agent-session-status $version-$PKGREL"
+          git push origin HEAD:master
+
+      - name: Remove AUR private key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/aur_key" "$RUNNER_TEMP/aur_known_hosts"

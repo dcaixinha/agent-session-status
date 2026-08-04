@@ -14,6 +14,7 @@
 - `src/config.rs` and `src/alert.rs`: alert configuration, filtering, and external command delivery.
 - `src/process.rs` and `src/workspace.rs`: Linux process identity and Hyprland association.
 - `integrations/`: provider-owned plugin/hook entry points; `examples/`: Ironbar and Waybar samples; `assets/`: licensed OpenCode images and sound.
+- `packaging/aur/`: stable AUR template, 0BSD packaging-source license, and release guidance; `.github/workflows/aur.yml` renders, tests, and publishes it.
 
 ## Core invariants
 
@@ -60,6 +61,15 @@
 - Keep licensing explicit: code is MIT, the OpenCode assets retain upstream MIT, and `agent-complete.wav` is CC0 1.0. User-provided assets are outside the project license and documentation must assign rights compliance to the user.
 - `install.sh` creates symlinks into the checkout. The checkout must remain in place, and docs must state that warning.
 - Do not run the installer merely to verify a change: it mutates the user's live binary, data, and OpenCode plugin symlinks. Build and test through Cargo instead unless installer behavior itself is under explicit test.
+
+## AUR releases
+
+- Stable AUR publication is triggered only by a published, non-prerelease `vX.Y.Z` GitHub release or an explicit workflow dispatch for that existing release. The tag and Cargo package version must match.
+- `packaging/aur/PKGBUILD.template` is the source of truth. Never publish unresolved placeholders or `SKIP`; the workflow computes the tagged archive checksum and generates `.SRCINFO` with `makepkg`.
+- Package files install under `/usr`; never invoke `install.sh` from a PKGBUILD or write into a package builder's home directory.
+- Build and tests run without AUR credentials. Only the final metadata-only job may access `AUR_SSH_PRIVATE_KEY`; preserve strict host-key verification, read-only GitHub permissions, serialized publication, expected-file checks, and non-force AUR pushes.
+- The first AUR push may initialize an empty repository. Unexpected deleted-package history, another maintainer, unknown tracked files, malformed versions, or a non-fast-forward update must fail for manual review.
+- Packaging-only fixes reuse the published tag with an increased `pkgrel`; upstream version releases reset `pkgrel` to 1.
 
 ## Verification gates
 

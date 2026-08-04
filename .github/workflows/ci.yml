@@ -1,5 +1,9 @@
 name: CI
 
+defaults:
+  run:
+    shell: bash
+
 on:
   push:
   pull_request:
@@ -16,3 +20,36 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
       - run: cargo build --locked --release --all-features
+
+  packaging:
+    name: PKGBUILD template lint
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm git namcap
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Render and validate PKGBUILD metadata
+        run: |
+          set -euo pipefail
+          version=$(awk -F'"' '/^version = "/{print $2; exit}' Cargo.toml)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir aur-stage
+          sed \
+            -e "s/@PKGVER@/$version/g" \
+            -e 's/@PKGREL@/1/g' \
+            -e 's/@SHA256@/0000000000000000000000000000000000000000000000000000000000000000/g' \
+            packaging/aur/PKGBUILD.template > aur-stage/PKGBUILD
+          ! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' aur-stage/PKGBUILD
+          useradd --create-home builder
+          chown -R builder:builder aur-stage
+          cd aur-stage
+          runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
+          grep -q '^pkgbase = agent-session-status$' .SRCINFO
+          grep -q "^[[:space:]]*pkgver = $version$" .SRCINFO
+          grep -q '^[[:space:]]*pkgrel = 1$' .SRCINFO
+          namcap PKGBUILD || true

@@ -22,6 +22,7 @@ Live OpenCode, Claude Code, and Codex session state for Ironbar and Waybar. Prov
 ## Contents
 
 - [Quick Start](#quick-start)
+- [Arch Linux (AUR)](#arch-linux-aur)
 - [Providers](#providers)
 - [Ironbar](#ironbar)
 - [Waybar](#waybar)
@@ -50,7 +51,27 @@ No provider CLI minimum version is claimed. Provider hook and plugin interfaces 
 
 ## Quick Start
 
-### 1. Clone and install
+### Arch Linux (AUR)
+
+After the first stable release is published, install the source-built package with an AUR helper:
+
+```sh
+paru -S agent-session-status
+```
+
+The package installs the binary, OpenCode images, completion sound, provider integration fragments, bar examples, documentation, and license notices under `/usr` using standard Arch paths. It does not modify files in your home directory. Provider setup remains manual:
+
+```sh
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins"
+ln -s /usr/share/agent-session-status/integrations/opencode/agent-session-status.ts \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/agent-session-status.ts"
+```
+
+Merge the Claude and Codex fragments from `/usr/share/agent-session-status/integrations/` rather than replacing existing provider configuration. Ironbar and Waybar examples are installed under `/usr/share/doc/agent-session-status/examples/`.
+
+### Source checkout
+
+#### 1. Clone and install
 
 ```sh
 git clone https://github.com/dcaixinha/agent-session-status.git
@@ -75,7 +96,7 @@ command -v agent-session-status
 agent-session-status --version
 ```
 
-### 2. Connect providers
+#### 2. Connect providers
 
 - OpenCode is connected by the installer. Restart OpenCode.
 - For Claude Code, merge [`integrations/claude/settings.json`](integrations/claude/settings.json) into `~/.claude/settings.json`, preserving existing hooks, then restart active sessions.
@@ -83,17 +104,17 @@ agent-session-status --version
 
 Do not replace a provider's whole settings or hooks file with the supplied fragment. Merge the named hook arrays so unrelated configuration remains intact.
 
-### 3. Add a status bar
+#### 3. Add a status bar
 
-#### Ironbar
+##### Ironbar
 
 Insert the object from [`examples/ironbar-module.json`](examples/ironbar-module.json) into the desired Ironbar `start`, `center`, or `end` array. Add [`examples/ironbar-style.css`](examples/ironbar-style.css) to the active stylesheet. See [Ironbar](#ironbar) for provider substitutions and remote groups.
 
-#### Waybar
+##### Waybar
 
 Merge the object from [`examples/waybar-module.json`](examples/waybar-module.json) into the Waybar bar object, add `custom/agent-session-opencode` to the desired `modules-left`, `modules-center`, or `modules-right` array, and add [`examples/waybar-style.css`](examples/waybar-style.css) to the active stylesheet. See [Waybar](#waybar) for provider substitutions, click commands, and remote groups.
 
-### 4. Verify
+#### 4. Verify
 
 Start a configured provider session, submit a prompt, and inspect the same state the bar integration reads:
 
