@@ -35,6 +35,7 @@ Live OpenCode, Claude Code, and Codex session state for Ironbar and Waybar. Prov
 - [Architecture](#architecture)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [Changelog](#changelog)
 - [Licensing](#licensing)
 
 ## Requirements
@@ -557,6 +558,10 @@ Unit tests cover provider lifecycle reduction, effective waiting, rendering/coun
 Live gaps remain outside automated coverage: actual provider plugin/hook compatibility, Ironbar rendering and popup behavior, Waybar/Pango/CSS appearance, filesystem watcher differences, desktop notification daemons, PipeWire/PulseAudio playback, DND utilities, Hyprland IPC, installed fonts, and appearance across themes. Test these manually when changing their boundaries. Tests must never emit real notifications or sounds.
 
 Contributor invariants and verification guidance are in [`AGENTS.md`](AGENTS.md).
+
+## Changelog
+
+User-visible changes and release history are maintained intentionally in [`CHANGELOG.md`](CHANGELOG.md), following Keep a Changelog. Stable GitHub release notes are extracted from its dated version section rather than generated from raw commits.
 
 ## Licensing
 

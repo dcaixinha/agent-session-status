@@ -42,7 +42,7 @@ packaging/release.sh 0.1.0
 For the initial release, the requested version may already match Cargo. For a
 later version, the script updates `Cargo.toml` and `Cargo.lock`, runs all
 release gates, and then creates the release commit. It atomically pushes `main`
-and the annotated tag, publishes the GitHub release with generated notes, and
+and the annotated tag, publishes the GitHub release with curated changelog notes, and
 waits for the `Publish AUR` workflow. Pass `--no-wait` to leave AUR publication
 running in the background.
 

@@ -50,7 +50,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$PKGREL" =~ ^[1-9][0-9]*$ ]]
 
           release=$(curl --fail --silent --show-error --location \
@@ -131,7 +131,7 @@ jobs:
       - name: Validate publication inputs
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$PKGREL" =~ ^[1-9][0-9]*$ ]]
           for file in PKGBUILD .SRCINFO LICENSE; do
             [[ -f "metadata/$file" && ! -L "metadata/$file" ]]

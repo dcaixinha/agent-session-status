@@ -71,6 +71,7 @@
 - The first AUR push may initialize an empty repository. Unexpected deleted-package history, another maintainer, unknown tracked files, malformed versions, or a non-fast-forward update must fail for manual review.
 - Packaging-only fixes reuse the published tag with an increased `pkgrel`; upstream version releases reset `pkgrel` to 1.
 - `packaging/release.sh` is the maintainer entry point for stable releases. It requires clean synchronized `main` (or the exact resumable release state), a public repository, and the configured AUR environment secret. Do not bypass its gates or rewrite a published tag.
+- Keep user-visible changes under `CHANGELOG.md` `[Unreleased]` using Keep a Changelog categories. Stable releases require at least one bullet, roll that content into a dated version section, and publish the same section as GitHub release notes.
 
 ## Verification gates
 

@@ -1,0 +1,24 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Event-driven OpenCode, Claude Code, and Codex session tracking with effective `waiting`, `working`, and `idle` states.
+- Ironbar labels and popups plus continuous Waybar JSON modules with tooltips and dynamic status classes.
+- Multiple main-session aggregation, active subagent counts, provider/source filtering, and grouped remote snapshots.
+- Atomic runtime state, PID identity checks, stale/TTL pruning, filesystem-driven updates, and Hyprland workspace association.
+- Optional batched idle-transition notifications and completion sounds with scope, subagent, and DND controls.
+- Theme-aware OpenCode assets and explicit user-provided provider images with local generic SVG tinting.
+- Source-built Arch/AUR packaging with automated validation and release-driven publication.
+
+### Security
+
+- Collision-safe remote identities, strict snapshot validation, escaped untrusted Pango content, private tint caches, and atomic cache writes.
+
+[Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.0...HEAD

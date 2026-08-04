@@ -20,6 +20,10 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
       - run: cargo build --locked --release --all-features
+      - run: |
+          grep -q '^## \[Unreleased\]$' CHANGELOG.md
+          grep -q '^\[Unreleased\]:' CHANGELOG.md
+          packaging/test-changelog.sh
 
   packaging:
     name: PKGBUILD template lint

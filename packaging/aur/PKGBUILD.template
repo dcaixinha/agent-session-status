@@ -65,6 +65,7 @@ package() {
 
   install -Dm0644 -t "$pkgdir/usr/share/doc/$pkgname/examples/" examples/*
   install -Dm0644 -t "$pkgdir/usr/share/doc/$pkgname/" \
+    CHANGELOG.md \
     README.md \
     THIRD_PARTY_NOTICES.md
   install -Dm0644 assets/README.md \

@@ -41,7 +41,8 @@ while (($#)); do
   shift
 done
 
-if [[ -z $VERSION || ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+STABLE_VERSION_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+if [[ -z $VERSION || ! $VERSION =~ $STABLE_VERSION_REGEX ]]; then
   echo 'error: version must be a bare stable X.Y.Z value' >&2
   usage >&2
   exit 2
@@ -54,6 +55,7 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
   exit 1
 }
 cd "$ROOT"
+source "$ROOT/packaging/changelog.sh"
 
 say() {
   printf '\033[1;34m==>\033[0m %s\n' "$*"
@@ -66,6 +68,34 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+run_release_gates() {
+  local version=$1
+  local temporary=$2
+
+  cargo fmt --check
+  cargo clippy --locked --all-targets --all-features -- -D warnings
+  cargo test --locked --all-features
+  cargo build --locked --release --all-features
+  go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 \
+    .github/workflows/ci.yml .github/workflows/aur.yml
+  packaging/test-changelog.sh
+
+  sed \
+    -e "s/@PKGVER@/$version/g" \
+    -e 's/@PKGREL@/1/g' \
+    -e 's/@SHA256@/0000000000000000000000000000000000000000000000000000000000000000/g' \
+    packaging/aur/PKGBUILD.template > "$temporary/PKGBUILD"
+  (
+    cd "$temporary"
+    makepkg --printsrcinfo > .SRCINFO
+  )
+  grep -q '^pkgbase = agent-session-status$' "$temporary/.SRCINFO"
+  grep -q "^[[:space:]]*pkgver = $version$" "$temporary/.SRCINFO"
+  grep -q '^[[:space:]]*pkgrel = 1$' "$temporary/.SRCINFO"
+  ! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' \
+    "$temporary/PKGBUILD" "$temporary/.SRCINFO"
 }
 
 for command in git cargo gh go makepkg jq; do
@@ -108,7 +138,7 @@ ahead=$(git rev-list --count origin/main..HEAD)
 [[ $behind == 0 ]] || die 'local main is behind origin/main'
 
 current_version=$(awk -F'"' '/^version = "/{print $2; exit}' Cargo.toml)
-[[ $current_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+[[ $current_version =~ $STABLE_VERSION_REGEX ]] \
   || die 'could not read the current Cargo package version'
 
 remote_tag_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | awk '{print $1}')
@@ -162,7 +192,29 @@ if [[ -z $local_tag_commit && -z $remote_tag_commit && $VERSION != "$current_ver
   [[ $newest == "$VERSION" ]] || die "$VERSION is older than current version $current_version"
 fi
 
+[[ -f CHANGELOG.md ]] || die 'CHANGELOG.md is missing'
+new_release=false
+if [[ -z $local_tag_commit && -z $remote_tag_commit ]] && ! $resume_release_commit; then
+  new_release=true
+  grep -q '^## \[Unreleased\]$' CHANGELOG.md \
+    || die 'CHANGELOG.md has no [Unreleased] section'
+  grep -q '^\[Unreleased\]:' CHANGELOG.md \
+    || die 'CHANGELOG.md has no [Unreleased] comparison link'
+  changelog_has_unreleased_changes CHANGELOG.md \
+    || die 'CHANGELOG.md [Unreleased] needs a change bullet under a standard category'
+else
+  grep -q "^## \[$VERSION\] - [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}$" CHANGELOG.md \
+    || die "CHANGELOG.md has no dated $VERSION release section"
+fi
+
 if $DRY_RUN; then
+  say 'Running non-mutating release gates'
+  dry_temporary=$(mktemp -d)
+  (
+    trap 'rm -rf "$dry_temporary"' EXIT
+    run_release_gates "$VERSION" "$dry_temporary"
+  )
+
   say "Dry run for $TAG"
   if $release_exists; then
     echo "Would re-dispatch AUR publication for existing release $TAG."
@@ -172,17 +224,17 @@ if $DRY_RUN; then
     echo "Would push the existing local tag $TAG and publish its GitHub release."
   elif $resume_release_commit; then
     echo "Would resume the existing release commit by creating and pushing tag $TAG."
-    echo "Would publish GitHub release $TAG with generated notes."
+    echo "Would publish GitHub release $TAG with curated changelog notes."
   else
     if [[ $VERSION == "$current_version" ]]; then
-      echo "Would release current version $VERSION without a version-bump commit."
+      echo "Would roll CHANGELOG.md and create commit: Release $TAG"
     else
       echo "Would update Cargo.toml and Cargo.lock from $current_version to $VERSION."
-      echo "Would create commit: Release $TAG"
+      echo "Would roll CHANGELOG.md and create commit: Release $TAG"
     fi
     echo "Would create annotated tag $TAG at the resulting release commit."
     echo "Would atomically push main and $TAG."
-    echo "Would publish GitHub release $TAG with generated notes."
+    echo "Would publish GitHub release $TAG with curated changelog notes."
   fi
   echo "Would run all Rust, workflow, and PKGBUILD metadata checks."
   echo "Would $($WAIT_FOR_AUR && echo wait for || echo not wait for) AUR publication."
@@ -190,63 +242,61 @@ if $DRY_RUN; then
 fi
 
 temporary=$(mktemp -d)
-restore_cargo=false
+restore_release_files=false
 cleanup() {
   status=$?
   trap - EXIT
-  if ((status != 0)) && $restore_cargo; then
-    git restore --staged Cargo.toml Cargo.lock >/dev/null 2>&1 || true
-    cp "$temporary/Cargo.toml" Cargo.toml
-    cp "$temporary/Cargo.lock" Cargo.lock
+  if ((status != 0)) && $restore_release_files; then
+    git restore --staged CHANGELOG.md Cargo.toml Cargo.lock >/dev/null 2>&1 || true
+    cp "$temporary/CHANGELOG.md" CHANGELOG.md
+    if [[ -f $temporary/Cargo.toml ]]; then
+      cp "$temporary/Cargo.toml" Cargo.toml
+      cp "$temporary/Cargo.lock" Cargo.lock
+    fi
   fi
   rm -rf "$temporary"
   exit "$status"
 }
 trap cleanup EXIT
 
-if [[ -z $local_tag_commit && -z $remote_tag_commit && $VERSION != "$current_version" ]]; then
-  say "Updating package version to $VERSION"
-  cp Cargo.toml Cargo.lock "$temporary/"
-  restore_cargo=true
-  sed -i "0,/^version = \"$current_version\"$/s//version = \"$VERSION\"/" Cargo.toml
-  cargo check --quiet
-  [[ $(awk -F'"' '/^version = "/{print $2; exit}' Cargo.toml) == "$VERSION" ]]
-  lock_version=$(awk '
-    /^name = "agent-session-status"$/ { found = 1; next }
-    found && /^version = / { gsub(/version = |"/, ""); print; exit }
-  ' Cargo.lock)
-  [[ $lock_version == "$VERSION" ]] || die 'Cargo.lock version did not update'
+if $new_release; then
+  cp CHANGELOG.md "$temporary/CHANGELOG.md"
+  restore_release_files=true
+
+  if [[ $VERSION != "$current_version" ]]; then
+    say "Updating package version to $VERSION"
+    cp Cargo.toml Cargo.lock "$temporary/"
+    sed -i "0,/^version = \"$current_version\"$/s//version = \"$VERSION\"/" Cargo.toml
+    cargo check --quiet
+    [[ $(awk -F'"' '/^version = "/{print $2; exit}' Cargo.toml) == "$VERSION" ]]
+    lock_version=$(awk '
+      /^name = "agent-session-status"$/ { found = 1; next }
+      found && /^version = / { gsub(/version = |"/, ""); print; exit }
+    ' Cargo.lock)
+    [[ $lock_version == "$VERSION" ]] || die 'Cargo.lock version did not update'
+  fi
+
+  previous_tag=$(gh release list --repo "$REPOSITORY" --limit 100 \
+    --json tagName,isDraft,isPrerelease \
+    --jq '[.[] | select(.isDraft == false and .isPrerelease == false)][0].tagName // empty')
+  say "Rolling CHANGELOG.md into $VERSION"
+  changelog_roll CHANGELOG.md "$VERSION" "$(date +%F)" "$previous_tag" \
+    "$REPOSITORY" "$temporary"
 fi
 
+changelog_extract_notes CHANGELOG.md "$VERSION" "$temporary/release-notes.md" \
+  || die "CHANGELOG.md $VERSION release notes are empty"
+
 say 'Running release gates'
-cargo fmt --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-features
-cargo build --locked --release --all-features
-go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 \
-  .github/workflows/ci.yml .github/workflows/aur.yml
+run_release_gates "$VERSION" "$temporary"
 
-sed \
-  -e "s/@PKGVER@/$VERSION/g" \
-  -e 's/@PKGREL@/1/g' \
-  -e 's/@SHA256@/0000000000000000000000000000000000000000000000000000000000000000/g' \
-  packaging/aur/PKGBUILD.template > "$temporary/PKGBUILD"
-(
-  cd "$temporary"
-  makepkg --printsrcinfo > .SRCINFO
-)
-grep -q '^pkgbase = agent-session-status$' "$temporary/.SRCINFO"
-grep -q "^[[:space:]]*pkgver = $VERSION$" "$temporary/.SRCINFO"
-grep -q '^[[:space:]]*pkgrel = 1$' "$temporary/.SRCINFO"
-! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' \
-  "$temporary/PKGBUILD" "$temporary/.SRCINFO"
-
-if $restore_cargo; then
-  unexpected=$(git status --porcelain | grep -Ev '^ M Cargo\.toml$|^ M Cargo\.lock$' || true)
+if $new_release; then
+  unexpected=$(git status --porcelain \
+    | grep -Ev '^ M CHANGELOG\.md$|^ M Cargo\.toml$|^ M Cargo\.lock$' || true)
   [[ -z $unexpected ]] || die "unexpected files changed during release:\n$unexpected"
-  git add Cargo.toml Cargo.lock
+  git add CHANGELOG.md Cargo.toml Cargo.lock
   git commit -m "Release $TAG"
-  restore_cargo=false
+  restore_release_files=false
 fi
 
 if [[ -z $local_tag_commit && -z $remote_tag_commit ]]; then
@@ -276,7 +326,7 @@ else
     --json databaseId --jq '.[0].databaseId // empty')
   say 'Publishing GitHub release'
   gh release create "$TAG" --repo "$REPOSITORY" --verify-tag \
-    --title "$TAG" --generate-notes
+    --title "$TAG" --notes-file "$temporary/release-notes.md"
 fi
 
 if ! $WAIT_FOR_AUR; then
