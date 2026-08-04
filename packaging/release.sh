@@ -171,13 +171,13 @@ elif [[ -n $local_tag_commit ]]; then
   [[ $local_tag_commit == "$(git rev-parse HEAD)" ]] \
     || die 'local release tag does not point at HEAD'
   if [[ $ahead != 0 ]]; then
-    [[ $ahead == 1 && $(git log -1 --format=%s) == "Release $TAG" ]] \
+    [[ $ahead == 1 && $(git log -1 --format=%s) == "🔖 Release $TAG" ]] \
       || die 'unexpected unpushed commits exist with the local release tag'
   fi
 else
   if [[ $ahead != 0 ]]; then
     [[ $ahead == 1 && $current_version == "$VERSION" \
-      && $(git log -1 --format=%s) == "Release $TAG" ]] \
+      && $(git log -1 --format=%s) == "🔖 Release $TAG" ]] \
       || die 'main must be synchronized with origin/main'
     resume_release_commit=true
   fi
@@ -227,10 +227,10 @@ if $DRY_RUN; then
     echo "Would publish GitHub release $TAG with curated changelog notes."
   else
     if [[ $VERSION == "$current_version" ]]; then
-      echo "Would roll CHANGELOG.md and create commit: Release $TAG"
+      echo "Would roll CHANGELOG.md and create commit: 🔖 Release $TAG"
     else
       echo "Would update Cargo.toml and Cargo.lock from $current_version to $VERSION."
-      echo "Would roll CHANGELOG.md and create commit: Release $TAG"
+      echo "Would roll CHANGELOG.md and create commit: 🔖 Release $TAG"
     fi
     echo "Would create annotated tag $TAG at the resulting release commit."
     echo "Would atomically push main and $TAG."
@@ -295,7 +295,7 @@ if $new_release; then
     | grep -Ev '^ M CHANGELOG\.md$|^ M Cargo\.toml$|^ M Cargo\.lock$' || true)
   [[ -z $unexpected ]] || die "unexpected files changed during release:\n$unexpected"
   git add CHANGELOG.md Cargo.toml Cargo.lock
-  git commit -m "Release $TAG"
+  git commit -m "🔖 Release $TAG"
   restore_release_files=false
 fi
 

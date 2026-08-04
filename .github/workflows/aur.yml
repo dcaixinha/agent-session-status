@@ -213,7 +213,7 @@ jobs:
           git config user.name 'Daniel Caixinha'
           git config user.email '2683004+dcaixinha@users.noreply.github.com'
           git add PKGBUILD .SRCINFO LICENSE
-          git commit -m "agent-session-status $version-$PKGREL"
+          git commit -m "📦 Publish agent-session-status $version-$PKGREL"
           git push origin HEAD:master
 
       - name: Remove AUR private key
