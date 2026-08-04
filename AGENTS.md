@@ -70,6 +70,7 @@
 - Build and tests run without AUR credentials. Only the final metadata-only job may access `AUR_SSH_PRIVATE_KEY`; preserve strict host-key verification, read-only GitHub permissions, serialized publication, expected-file checks, and non-force AUR pushes.
 - The first AUR push may initialize an empty repository. Unexpected deleted-package history, another maintainer, unknown tracked files, malformed versions, or a non-fast-forward update must fail for manual review.
 - Packaging-only fixes reuse the published tag with an increased `pkgrel`; upstream version releases reset `pkgrel` to 1.
+- `packaging/release.sh` is the maintainer entry point for stable releases. It requires clean synchronized `main` (or the exact resumable release state), a public repository, and the configured AUR environment secret. Do not bypass its gates or rewrite a published tag.
 
 ## Verification gates
 
@@ -88,6 +89,7 @@ Automated coverage includes reducers, snapshots, store transitions/pruning, rend
 
 ## Style
 
+- Git: commit subjects must follow gitmoji conventions, beginning with one appropriate emoji followed by a concise imperative description.
 - Rust: stable edition 2024, formatted with rustfmt, warning-free under the repository clippy command. Prefer small functions, explicit errors at input boundaries, deterministic ordered collections where output/state stability matters, and comments only for non-obvious invariants.
 - TypeScript: follow the integration's existing semicolon-free concise style, retain type imports, serialize only relevant events, and await child completion.
 - JSON: valid strict JSON, two-space indentation, no comments; examples must distinguish merge fragments from complete files.

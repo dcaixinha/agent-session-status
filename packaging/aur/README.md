@@ -31,10 +31,27 @@ must be able to download the tagged source archive.
 
 ## Release flow
 
-1. Confirm `Cargo.toml` and `Cargo.lock` contain the intended stable version.
-2. Push the reviewed commit and create its `vX.Y.Z` tag.
-3. Publish a non-draft, non-prerelease GitHub release for that tag.
-4. The `Publish AUR` workflow builds, verifies, and publishes `X.Y.Z-1`.
+Use the release driver from a clean, synchronized `main` branch after making
+the repository public and configuring the AUR secret:
+
+```sh
+packaging/release.sh --dry-run 0.1.0
+packaging/release.sh 0.1.0
+```
+
+For the initial release, the requested version may already match Cargo. For a
+later version, the script updates `Cargo.toml` and `Cargo.lock`, runs all
+release gates, and then creates the release commit. It atomically pushes `main`
+and the annotated tag, publishes the GitHub release with generated notes, and
+waits for the `Publish AUR` workflow. Pass `--no-wait` to leave AUR publication
+running in the background.
+
+The script is resumable: rerunning it can push a previously created local tag,
+create a missing GitHub release for an already-pushed tag, or re-dispatch AUR
+publication for an existing release. A failed version bump before its release
+commit restores `Cargo.toml` and `Cargo.lock`. If additional commits have been
+made since a release tag, retry AUR publication directly through the workflow
+dispatch instead of moving or recreating the tag.
 
 For a packaging-only correction, manually dispatch the workflow with the same
 published tag and a greater `pkgrel`. The workflow never force-pushes AUR
