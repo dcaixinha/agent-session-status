@@ -49,13 +49,15 @@ running in the background.
 The script is resumable: rerunning it can push a previously created local tag,
 create a missing GitHub release for an already-pushed tag, or re-dispatch AUR
 publication for an existing release. A failed version bump before its release
-commit restores `Cargo.toml` and `Cargo.lock`. If additional commits have been
-made since a release tag, retry AUR publication directly through the workflow
-dispatch instead of moving or recreating the tag.
+commit restores `Cargo.toml` and `Cargo.lock`. Compatible workflow or packaging
+fixes may be committed after a release; rerunning the script uses the current
+workflow and packaging template while continuing to build application source
+from the existing immutable tag.
 
 For a packaging-only correction, manually dispatch the workflow with the same
-published tag and a greater `pkgrel`. The workflow never force-pushes AUR
-history and treats an unchanged generated package as an idempotent success.
+published tag and a greater `pkgrel`, selecting `main` as the workflow ref. The
+workflow never force-pushes AUR history and treats an unchanged generated
+package as an idempotent success.
 
 ## Files published to AUR
 

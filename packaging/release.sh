@@ -164,8 +164,16 @@ fi
 if [[ -n $remote_tag_commit ]]; then
   [[ $ahead == 0 ]] || die 'main must be synchronized after the release tag was pushed'
   [[ $current_version == "$VERSION" ]] || die 'Cargo version does not match existing tag'
-  [[ $remote_tag_commit == "$(git rev-parse HEAD)" ]] \
-    || die 'existing release tag does not point at current main'
+  if $release_exists; then
+    git merge-base --is-ancestor "$remote_tag_commit" HEAD \
+      || die 'existing release tag is not an ancestor of current main'
+    tagged_version=$(git show "$TAG:Cargo.toml" \
+      | awk -F'"' '/^version = "/{print $2; exit}')
+    [[ $tagged_version == "$VERSION" ]] || die 'tagged Cargo version does not match release'
+  else
+    [[ $remote_tag_commit == "$(git rev-parse HEAD)" ]] \
+      || die 'unpublished release tag does not point at current main'
+  fi
 elif [[ -n $local_tag_commit ]]; then
   [[ $current_version == "$VERSION" ]] || die 'Cargo version does not match local tag'
   [[ $local_tag_commit == "$(git rev-parse HEAD)" ]] \
@@ -312,17 +320,19 @@ if [[ -z $remote_tag_commit ]]; then
 fi
 
 workflow_event=release
+workflow_commit=$remote_tag_commit
 if $release_exists; then
   workflow_event=workflow_dispatch
+  workflow_commit=$(git rev-parse HEAD)
   previous_run_id=$(gh run list --repo "$REPOSITORY" --workflow aur.yml \
-    --event "$workflow_event" --commit "$remote_tag_commit" --limit 1 \
+    --event "$workflow_event" --commit "$workflow_commit" --limit 1 \
     --json databaseId --jq '.[0].databaseId // empty')
   say 'Re-dispatching AUR publication for existing release'
   gh workflow run aur.yml --repo "$REPOSITORY" --ref main \
     --field tag="$TAG" --field pkgrel=1
 else
   previous_run_id=$(gh run list --repo "$REPOSITORY" --workflow aur.yml \
-    --event "$workflow_event" --commit "$remote_tag_commit" --limit 1 \
+    --event "$workflow_event" --commit "$workflow_commit" --limit 1 \
     --json databaseId --jq '.[0].databaseId // empty')
   say 'Publishing GitHub release'
   gh release create "$TAG" --repo "$REPOSITORY" --verify-tag \
@@ -338,7 +348,7 @@ say 'Waiting for Publish AUR workflow'
 run_id=
 for _ in {1..30}; do
   candidate=$(gh run list --repo "$REPOSITORY" --workflow aur.yml \
-    --event "$workflow_event" --commit "$remote_tag_commit" --limit 1 \
+    --event "$workflow_event" --commit "$workflow_commit" --limit 1 \
     --json databaseId --jq '.[0].databaseId // empty')
   if [[ -n $candidate && $candidate != "$previous_run_id" ]]; then
     run_id=$candidate

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Add user-visible changes below using Keep a Changelog categories. -->
 
+### Fixed
+
+- Registered the Arch container checkout as a safe Git directory before validating and publishing AUR metadata.
+
 ## [0.1.0] - 2026-08-05
 
 ### Added

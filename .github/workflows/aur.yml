@@ -40,16 +40,31 @@ jobs:
         run: pacman -Syu --noconfirm cargo curl git jq namcap
 
       - name: Check out release tag
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
+
+      - name: Check out packaging definition
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'refs/heads/main' || env.RELEASE_TAG }}
+          path: packaging-definition
+          persist-credentials: false
+
+      - name: Trust container checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/packaging-definition"
 
       - name: Validate release and render PKGBUILD
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]]
+          fi
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$PKGREL" =~ ^[1-9][0-9]*$ ]]
 
@@ -79,8 +94,8 @@ jobs:
             -e "s/@PKGVER@/$version/g" \
             -e "s/@PKGREL@/$PKGREL/g" \
             -e "s/@SHA256@/$checksum/g" \
-            packaging/aur/PKGBUILD.template > aur-stage/PKGBUILD
-          cp packaging/aur/LICENSE aur-stage/LICENSE
+            packaging-definition/packaging/aur/PKGBUILD.template > aur-stage/PKGBUILD
+          cp packaging-definition/packaging/aur/LICENSE aur-stage/LICENSE
 
           ! grep -Eq '@(PKGVER|PKGREL|SHA256)@|SKIP' aur-stage/PKGBUILD
           useradd --create-home builder
