@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- Add user-visible changes below using Keep a Changelog categories. -->
+
+## [0.1.0] - 2026-08-05
+
 ### Added
 
 - Event-driven OpenCode, Claude Code, and Codex session tracking with effective `waiting`, `working`, and `idle` states.
@@ -22,3 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Collision-safe remote identities, strict snapshot validation, escaped untrusted Pango content, private state and tint caches, and atomic cache writes.
 
 [Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/dcaixinha/agent-session-status/releases/tag/v0.1.0
