@@ -9,6 +9,10 @@ Live OpenCode, Claude Code, and Codex session state for Ironbar and Waybar. Prov
 
 *Three local provider segments using the bundled OpenCode image and text-only Claude Code and Codex labels.*
 
+![OpenCode popup showing working and idle sessions with Hyprland workspace labels.](docs/images/session-popup.png)
+
+*The OpenCode session popup, including project paths and resolved Hyprland workspace labels.*
+
 ## Features
 
 - Event-driven local updates for multiple simultaneous sessions and subagents.
@@ -173,10 +177,6 @@ The module has three update paths:
 | Popup | Polls `render --format popup` every 3 seconds while Ironbar evaluates it. |
 
 The source example uses the exact upstream OpenCode image without tinting.
-
-![OpenCode popup showing working and idle sessions with Hyprland workspace labels.](docs/images/session-popup.png)
-
-*The OpenCode session popup, including project paths and resolved Hyprland workspace labels.*
 
 ### Grouped remote module
 
