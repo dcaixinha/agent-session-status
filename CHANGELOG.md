@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Add user-visible changes below using Keep a Changelog categories. -->
 
+### Fixed
+
+- Corrected the Emacs location query and increased its timeout so busy local servers can resolve sessions.
+
 ## [0.1.1] - 2026-09-01
 
 

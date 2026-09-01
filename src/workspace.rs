@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::process::{ancestor_pids, process_name};
 
-const EMACS_TIMEOUT: Duration = Duration::from_secs(1);
+const EMACS_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionLocation {
@@ -223,12 +223,18 @@ fn normalized_perspectives(perspectives: &[String]) -> Vec<String> {
 }
 
 fn query_emacs(shell_pids: &[u32]) -> Option<Vec<EmacsProcess>> {
+    let expression = emacs_expression(shell_pids);
+    let output = capture_emacs(&expression)?;
+    parse_emacs_output(&output)
+}
+
+fn emacs_expression(shell_pids: &[u32]) -> String {
     let pids = shell_pids
         .iter()
         .map(u32::to_string)
         .collect::<Vec<_>>()
         .join(" ");
-    let expression = format!(
+    format!(
         r#"(progn
   (require 'json)
   (require 'seq)
@@ -262,11 +268,9 @@ fn query_emacs(shell_pids: &[u32]) -> Option<Vec<EmacsProcess>> {
                               (lambda (perspective)
                                 (memq buffer (persp-buffers perspective)))
                               (delq nil (persp-persps))))
-                          nil))))))
+                          nil)))))))
           '({pids})))))"#
-    );
-    let output = capture_emacs(&expression)?;
-    parse_emacs_output(&output)
+    )
 }
 
 fn parse_emacs_output(output: &str) -> Option<Vec<EmacsProcess>> {
@@ -578,6 +582,17 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].shell_pid, 20);
         assert_eq!(responses[0].frames, ["project@emacs"]);
+    }
+
+    #[test]
+    fn generated_emacs_expression_has_balanced_parentheses() {
+        let expression = emacs_expression(&[20, 30]);
+
+        assert_eq!(
+            expression.matches('(').count(),
+            expression.matches(')').count()
+        );
+        assert!(expression.ends_with("'(20 30)))))"));
     }
 
     #[test]
