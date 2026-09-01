@@ -73,6 +73,7 @@ impl Store {
         source: Option<String>,
         group_source: bool,
         show_provider: bool,
+        resolve_emacs: bool,
     ) -> Result<()> {
         let (tx, rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |event| {
@@ -86,6 +87,7 @@ impl Store {
             source.as_deref(),
             group_source,
             show_provider,
+            resolve_emacs,
         )?;
         loop {
             match rx.recv_timeout(Duration::from_secs(10)) {
@@ -102,6 +104,7 @@ impl Store {
                         source.as_deref(),
                         group_source,
                         show_provider,
+                        resolve_emacs,
                     )?;
                 }
                 Ok(Ok(_)) | Ok(Err(_)) => {}
@@ -111,6 +114,7 @@ impl Store {
                     source.as_deref(),
                     group_source,
                     show_provider,
+                    resolve_emacs,
                 )?,
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -125,6 +129,7 @@ impl Store {
         source: Option<&str>,
         group_source: bool,
         show_provider: bool,
+        resolve_emacs: bool,
     ) -> Result<()> {
         println!(
             "{}",
@@ -135,6 +140,7 @@ impl Store {
                 source,
                 group_source,
                 show_provider,
+                resolve_emacs,
             )?
         );
         std::io::stdout().flush()?;

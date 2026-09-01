@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::model::{Provider, SessionKind, State, Status};
-use crate::workspace::WorkspaceMap;
+use crate::workspace::{SessionLocation, WorkspaceMap};
 
 #[derive(Clone, Copy, Debug)]
 pub enum OutputFormat {
@@ -22,6 +22,7 @@ pub fn render(
     source: Option<&str>,
     group_source: bool,
     show_provider: bool,
+    resolve_emacs: bool,
 ) -> Result<String> {
     let filtered;
     let state = if provider.is_some() || source.is_some() {
@@ -52,9 +53,10 @@ pub fn render(
             group_source,
             show_provider,
             source.unwrap_or_default(),
+            resolve_emacs,
         ),
         OutputFormat::Details => Ok(render_details(state, source.is_some())),
-        OutputFormat::Popup => Ok(render_popup(state, source.is_some())),
+        OutputFormat::Popup => Ok(render_popup(state, source.is_some(), resolve_emacs)),
         OutputFormat::Json => Ok(serde_json::to_string(state)?),
     }
 }
@@ -72,6 +74,7 @@ fn render_waybar(
     group_source: bool,
     show_provider: bool,
     source: &str,
+    resolve_emacs: bool,
 ) -> Result<String> {
     let sessions = visible_sessions(state);
     if sessions.is_empty() {
@@ -104,7 +107,7 @@ fn render_waybar(
         } else {
             render_ironbar(state, show_provider)
         },
-        tooltip: render_popup(state, source_filtered),
+        tooltip: render_popup(state, source_filtered, resolve_emacs),
         class,
     })
     .map_err(Into::into)
@@ -325,7 +328,7 @@ fn render_details(state: &State, source_filtered: bool) -> String {
         .join("\n")
 }
 
-fn render_popup(state: &State, source_filtered: bool) -> String {
+fn render_popup(state: &State, source_filtered: bool, resolve_emacs: bool) -> String {
     let sessions = visible_sessions(state);
     if sessions.is_empty() {
         return "No open sessions".to_owned();
@@ -334,6 +337,10 @@ fn render_popup(state: &State, source_filtered: bool) -> String {
     let colors = Colors::from_env();
     let display = DisplayConfig::from_env();
     let workspaces = WorkspaceMap::detect();
+    let locations = workspaces.locations(
+        sessions.iter().filter_map(|session| session.pid),
+        resolve_emacs,
+    );
     sessions
         .into_iter()
         .map(|session| {
@@ -363,16 +370,10 @@ fn render_popup(state: &State, source_filtered: bool) -> String {
             } else {
                 String::new()
             };
-            let wayland_workspace = session
+            let location = session
                 .pid
-                .and_then(|pid| workspaces.for_process(pid))
-                .map(|name| {
-                    format!(
-                        "\n<span foreground='{}'>Wayland workspace: <b>{}</b></span>",
-                        colors.for_status(Status::Idle),
-                        escape_markup(name)
-                    )
-                })
+                .and_then(|pid| locations.get(&pid))
+                .map(|location| render_location(location, &colors))
                 .unwrap_or_default();
             format!(
                 "<span size='large' weight='bold'>{}</span>\n<span foreground='{}'>{}{} {}{}</span>{}\n<span size='small' foreground='{}'>{}</span>",
@@ -382,13 +383,25 @@ fn render_popup(state: &State, source_filtered: bool) -> String {
                 display.icon(status),
                 status,
                 kind,
-                wayland_workspace,
+                location,
                 colors.for_status(Status::Idle),
                 escape_markup(&session.cwd)
             )
         })
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+fn render_location(location: &SessionLocation, colors: &Colors) -> String {
+    let (label, value) = match location {
+        SessionLocation::Wayland(workspace) => ("Wayland workspace", workspace),
+        SessionLocation::Emacs(perspective) => ("Emacs", perspective),
+    };
+    format!(
+        "\n<span foreground='{}'>{label}: <b>{}</b></span>",
+        colors.for_status(Status::Idle),
+        escape_markup(value)
+    )
 }
 
 fn is_remote(session: &crate::model::Session) -> bool {
@@ -582,7 +595,7 @@ mod tests {
 
         assert_eq!(render_ironbar(&state, true), "");
         assert_eq!(render_details(&state, false), "No open agent sessions");
-        assert_eq!(render_popup(&state, false), "No open sessions");
+        assert_eq!(render_popup(&state, false, false), "No open sessions");
         assert!(!state.sessions.values().any(|session| {
             session.kind == SessionKind::Main || session.effective_status() != Status::Idle
         }));
@@ -650,11 +663,22 @@ mod tests {
             None,
             false,
             true,
+            false,
         )
         .unwrap();
         assert!(output.contains("<span size='large' weight='bold'>one</span>"));
         assert!(output.contains("working"));
         assert!(!output.contains("two"));
+    }
+
+    #[test]
+    fn popup_location_escapes_emacs_perspective_markup() {
+        let output = render_location(
+            &SessionLocation::Emacs("~/project<&".to_owned()),
+            &Colors::from_env(),
+        );
+
+        assert!(output.contains("Emacs: <b>~/project&lt;&amp;</b>"));
     }
 
     #[test]
@@ -701,6 +725,7 @@ mod tests {
             Some("fleet"),
             true,
             true,
+            false,
         )
         .unwrap();
         assert!(grouped.contains("fleet"));
@@ -715,6 +740,7 @@ mod tests {
             Some("fleet"),
             false,
             true,
+            false,
         )
         .unwrap();
         assert!(details.contains("Build host - claude: working"));
@@ -740,6 +766,7 @@ mod tests {
             Some("fleet"),
             false,
             true,
+            false,
         )
         .unwrap();
         assert!(output.contains("weight='bold'>Display host</span>"));
@@ -780,6 +807,7 @@ mod tests {
             None,
             false,
             true,
+            false,
         )
         .unwrap();
         assert_eq!(output.lines().count(), 1);
@@ -810,6 +838,7 @@ mod tests {
             Some("fleet"),
             true,
             true,
+            false,
         )
         .unwrap();
         assert_eq!(
@@ -844,6 +873,7 @@ mod tests {
             Some("fleet"),
             true,
             true,
+            false,
         )
         .unwrap();
         let value: serde_json::Value = serde_json::from_str(&output).unwrap();

@@ -317,6 +317,7 @@ The default icon mode uses Font Awesome question-circle for waiting, gears for w
 | `AGENT_SESSION_STATUS_ICON_IDLE` | Idle label, optionally Pango markup. | Font Awesome circle-pause |
 | `AGENT_SESSION_STATUS_SOURCE_LABEL` | Trusted Pango label for `--group-source`. | Escaped source ID |
 | `AGENT_SESSION_STATUS_WORKSPACE_NAMES` | JSON object mapping compositor workspace names to labels. | Ironbar JSON fallback |
+| `AGENT_SESSION_STATUS_EMACS` | Enable Emacs frame and perspective resolution; same as `render/watch --emacs`. | Disabled |
 | `IRONBAR_CSS` | Active Ironbar CSS path for asset theme and foreground detection. | `${XDG_CONFIG_HOME:-~/.config}/ironbar/style.css` |
 | `IRONBAR_CONFIG` | Ironbar JSON config path searched for workspace `name_map` values. | `${XDG_CONFIG_HOME:-~/.config}/ironbar/config.json` |
 
@@ -452,7 +453,7 @@ Grouped output uses all selected sessions, the highest status, and `(N)` or `(hi
 |---|---|---|
 | `event <PROVIDER>` | Provider is `opencode`, `claude`, or `codex`; reads one provider JSON event from stdin. | No stdout. Invalid JSON/state errors are nonzero. Recognized and unrecognized valid event objects commit successfully; alert failures only warn. |
 | `snapshot` | Reads one remote snapshot JSON object from stdin. | No stdout. Schema/validation/state errors are nonzero; alert failures after commit only warn. |
-| `render` | `--format ironbar\|waybar\|details\|popup\|json`, `--provider`, `--source`, `--group-source`, `--hide-provider`. | Prints one result and exits. Format defaults to `ironbar`. `--group-source` requires `--source`; `--hide-provider` affects non-grouped bar output. Empty output is still success. |
+| `render` | `--format ironbar\|waybar\|details\|popup\|json`, `--provider`, `--source`, `--group-source`, `--hide-provider`, `--emacs`. | Prints one result and exits. Format defaults to `ironbar`. `--group-source` requires `--source`; `--hide-provider` affects non-grouped bar output. `--emacs` can also be enabled with `AGENT_SESSION_STATUS_EMACS`. Empty output is still success. |
 | `watch` | Same options and defaults as `render`. | Prints immediately and after state changes or each 10-second timeout; flushes each result and runs until interrupted or a watcher/render error. |
 | `active` | `--provider`, `--source`. | No stdout. Success if any matching main session exists at any status, or any matching subagent is non-idle; otherwise nonzero with `no active sessions`. |
 | `clear` | No command-specific options. | Atomically removes all tracked sessions; success even when already empty. It does not emit idle alerts. |
@@ -484,11 +485,13 @@ Local provider events walk `/proc` ancestry to find the provider process and sav
 
 ## Hyprland Workspaces
 
-When `HYPRLAND_INSTANCE_SIGNATURE` exists, popup rendering runs `hyprctl -j clients`, keeps mapped clients, and maps their PIDs to workspace names. For each local session PID, it walks the process and parent ancestry and uses the nearest ancestor that owns a mapped Hyprland window. This commonly associates the provider process with its terminal window.
+When `HYPRLAND_INSTANCE_SIGNATURE` exists, popup rendering runs `hyprctl -j clients`, keeps mapped clients, and maps their PIDs to workspace names. For each local session PID, it walks the process and parent ancestry and uses the nearest ancestor that owns a mapped Hyprland window. This commonly associates the provider process with its terminal window. Multiple windows from one PID are accepted when they are all on the same workspace; windows on different workspaces are treated as ambiguous rather than selecting one based on `hyprctl` output order.
 
 Labels are taken first from `AGENT_SESSION_STATUS_WORKSPACE_NAMES`, a JSON object such as `{"1":"main","2":"browser"}`. Otherwise the program recursively searches the JSON file at `IRONBAR_CONFIG` for `type: "workspaces"` objects and their `name_map` strings. Waybar users should set the explicit environment variable when raw Hyprland workspace names are not sufficient.
 
-Limitations: remote snapshots have no PID; malformed or non-JSON Ironbar configs yield no labels; failed `hyprctl` calls are ignored; unmapped clients are excluded; and the standard `ext-workspace` protocol does not associate arbitrary toplevels with workspaces. Other compositors need their own external association strategy.
+Emacs creates multiple graphical frames under one OS process, so PID ancestry alone cannot select a frame. Opt in with `--emacs` on `render` or `watch`, or set `AGENT_SESSION_STATUS_EMACS=true`. Only when an otherwise ambiguous ancestor is Emacs, the renderer makes one fail-soft, one-second `emacsclient` query for all affected sessions. It verifies the responding Emacs PID and maps each provider through its shell process to the exact Emacs buffer. A currently displayed buffer uses its unique frame title to select the matching Hyprland client and continues to render `Wayland workspace: ...`. A hidden buffer with `persp-mode` membership instead renders `Emacs: ...`, using its sorted perspective names with `$HOME` abbreviated to `~` and trailing slashes removed. The feature is disabled by default, makes no `emacsclient` call for direct terminal sessions, and does not infer locations from project paths or title substrings.
+
+Limitations: remote snapshots have no PID; malformed or non-JSON Ironbar configs yield no labels; failed `hyprctl` and opted-in `emacsclient` calls are ignored; unmapped clients are excluded; hidden Emacs buffers without `persp-mode` membership have no location label; and the standard `ext-workspace` protocol does not associate arbitrary toplevels with workspaces. Other compositors need their own external association strategy.
 
 ## Architecture
 
@@ -535,6 +538,7 @@ flowchart LR
 | Foreground tint is wrong | Ensure the active CSS has a whitespace-tokenizable `@define-color fg VALUE;`, or set `AGENT_SESSION_STATUS_COLOR_FOREGROUND`. |
 | Glyphs are boxes | Install Font Awesome 7 Free or override the three icon variables/text mode. |
 | Popup has no workspace label | Check Hyprland environment inheritance, `hyprctl -j clients`, process ancestry, JSON `IRONBAR_CONFIG`, or explicit workspace-name JSON. |
+| Emacs-hosted session has no location | Add `--emacs` to the popup or Waybar command, ensure the owning Emacs has a running server reachable by `emacsclient`, and confirm hidden buffers belong to a `persp-mode` perspective. |
 | Waybar module never appears | Set `return-type` to `json`, omit `interval` and `signal`, enable `hide-empty-text`, and run the documented `watch --format waybar` command in a terminal. |
 | Waybar tooltip shows markup literally | Set `escape` to `false` and do not set `tooltip-format`, which would override the JSON tooltip. |
 | Remote sessions vanish | The producer omitted an instance, sent an empty session array, stopped refreshing before TTL, or used `ttl_seconds: 0`. |

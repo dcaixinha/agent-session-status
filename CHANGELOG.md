@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Add user-visible changes below using Keep a Changelog categories. -->
 
+### Added
+
+- Added opt-in `--emacs` and `AGENT_SESSION_STATUS_EMACS` location resolution, showing the Hyprland workspace for visible Emacs frames and the perspective name for hidden buffers.
+
 ### Fixed
 
 - Registered the Arch container checkout as a safe Git directory before validating and publishing AUR metadata.
+- Prevented multiple Hyprland windows sharing one PID from assigning an arbitrary workspace to every descendant session.
 
 ## [0.1.0] - 2026-08-05
 

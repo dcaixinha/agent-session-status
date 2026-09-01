@@ -37,6 +37,12 @@ pub fn ancestor_pids(mut pid: u32) -> Vec<u32> {
     ancestors
 }
 
+pub fn process_name(pid: u32) -> Option<String> {
+    fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|name| name.trim().to_owned())
+}
+
 fn matches_provider(provider: Provider, comm: &str) -> bool {
     match provider {
         Provider::OpenCode => comm == "opencode",

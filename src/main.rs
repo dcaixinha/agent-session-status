@@ -60,6 +60,9 @@ enum Command {
         /// Omit the provider name when a bar displays a provider image.
         #[arg(long)]
         hide_provider: bool,
+        /// Resolve Emacs-hosted sessions to visible workspaces or perspectives.
+        #[arg(long, env = "AGENT_SESSION_STATUS_EMACS")]
+        emacs: bool,
     },
     /// Stream a new rendered line whenever session state changes.
     Watch {
@@ -76,6 +79,9 @@ enum Command {
         /// Omit the provider name when a bar displays a provider image.
         #[arg(long)]
         hide_provider: bool,
+        /// Resolve Emacs-hosted sessions to visible workspaces or perspectives.
+        #[arg(long, env = "AGENT_SESSION_STATUS_EMACS")]
+        emacs: bool,
     },
     /// Exit successfully when at least one session is open.
     Active {
@@ -209,6 +215,7 @@ fn main() -> Result<()> {
             source,
             group_source,
             hide_provider,
+            emacs,
         } => {
             let state = store.load_and_prune()?;
             println!(
@@ -220,6 +227,7 @@ fn main() -> Result<()> {
                     source.as_deref(),
                     group_source,
                     !hide_provider,
+                    emacs,
                 )?
             );
         }
@@ -229,12 +237,14 @@ fn main() -> Result<()> {
             source,
             group_source,
             hide_provider,
+            emacs,
         } => store.watch(
             format.into(),
             provider.map(Into::into),
             source,
             group_source,
             !hide_provider,
+            emacs,
         )?,
         Command::Active { provider, source } => {
             let state = store.load_and_prune()?;
@@ -263,5 +273,22 @@ fn deliver_ingestion_alerts(transitions: &[crate::model::Session]) {
     let result = LoadedConfig::load().and_then(|config| deliver_loaded(transitions, &config));
     if let Err(error) = result {
         eprintln!("agent-session-status: warning: idle alert failed: {error:#}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emacs_resolution_is_opt_in_for_render_and_watch() {
+        for command in ["render", "watch"] {
+            let cli = Cli::try_parse_from(["agent-session-status", command, "--emacs"]).unwrap();
+            let enabled = match cli.command {
+                Command::Render { emacs, .. } | Command::Watch { emacs, .. } => emacs,
+                _ => false,
+            };
+            assert!(enabled);
+        }
     }
 }
