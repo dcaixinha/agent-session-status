@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Add user-visible changes below using Keep a Changelog categories. -->
 
+## [0.1.2] - 2026-09-01
+
+
 ### Fixed
 
 - Corrected the Emacs location query and increased its timeout so busy local servers can resolve sessions.
@@ -41,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Collision-safe remote identities, strict snapshot validation, escaped untrusted Pango content, private state and tint caches, and atomic cache writes.
 
-[Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dcaixinha/agent-session-status/releases/tag/v0.1.0
