@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Add user-visible changes below using Keep a Changelog categories. -->
 
+## [0.1.1] - 2026-09-01
+
+
 ### Added
 
 - Added opt-in `--emacs` and `AGENT_SESSION_STATUS_EMACS` location resolution, showing the Hyprland workspace for visible Emacs frames and the perspective name for hidden buffers.
@@ -34,5 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Collision-safe remote identities, strict snapshot validation, escaped untrusted Pango content, private state and tint caches, and atomic cache writes.
 
-[Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/dcaixinha/agent-session-status/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dcaixinha/agent-session-status/releases/tag/v0.1.0
