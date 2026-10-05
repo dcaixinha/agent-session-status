@@ -184,6 +184,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let store = Store::new(cli.state_dir)?;
+    workspace::set_emacs_state_dir(store.dir());
 
     match cli.command {
         Command::Event { provider } => {

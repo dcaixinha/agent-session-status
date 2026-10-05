@@ -38,6 +38,10 @@ impl Store {
         })
     }
 
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     pub fn update(
         &self,
         apply: impl FnOnce(&mut State, u64) -> Result<()>,

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added theme-specific status colors, `AGENT_SESSION_STATUS_COLOR_{WAITING,WORKING,IDLE}_{LIGHT,DARK}`, falling back to the plain variables. `watch` resolves the theme on every redraw and redraws when the stylesheet is repointed, so theme switches no longer need a bar reload.
 
+### Fixed
+
+- Stopped concurrent renders from piling up `emacsclient` queries against a busy Emacs: queries are single-flight, cached for five seconds, back off for fifteen seconds after a timeout, and a slow client is no longer killed (which made Emacs log `Process server <N> not running: connection broken by remote peer`).
+
 ## [0.1.2] - 2026-09-01
 
 

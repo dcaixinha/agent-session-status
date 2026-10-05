@@ -1,17 +1,33 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io::Read;
-use std::path::PathBuf;
+use std::fs::{self, File, OpenOptions};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde::Deserialize;
+use fs2::FileExt;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::process::{ancestor_pids, process_name};
 
+/// How long one render waits for `emacsclient` before giving up on it.
 const EMACS_TIMEOUT: Duration = Duration::from_secs(3);
+/// A successful answer is shared by every render for this long.
+const EMACS_FRESH: Duration = Duration::from_secs(5);
+/// After a timeout, Emacs is busy: don't ask again for this long.
+const EMACS_BACKOFF: Duration = Duration::from_secs(15);
+/// Locations older than this are dropped rather than shown while busy.
+const EMACS_STALE: Duration = Duration::from_secs(60);
+
+static EMACS_STATE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Where Emacs queries keep their lock, cache and reply file (the store's
+/// owner-controlled state directory). Without it, Emacs is never queried.
+pub fn set_emacs_state_dir(dir: &Path) {
+    let _ = EMACS_STATE_DIR.set(dir.to_path_buf());
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionLocation {
@@ -132,7 +148,7 @@ struct PendingEmacsLocation {
     windows: Vec<WindowLocation>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct EmacsProcess {
     shell_pid: u32,
     emacs_pid: u32,
@@ -150,8 +166,172 @@ struct SystemEmacsResolver;
 
 impl EmacsResolver for SystemEmacsResolver {
     fn query(&self, shell_pids: &[u32]) -> Vec<EmacsProcess> {
-        query_emacs(shell_pids).unwrap_or_default()
+        let Some(dir) = EMACS_STATE_DIR.get() else {
+            return Vec::new();
+        };
+        CachedEmacs::new(dir.clone(), PathBuf::from("emacsclient")).query(shell_pids)
     }
+}
+
+/// Emacs queries shared by every concurrent render (several bar pollers):
+///
+/// - at most one `emacsclient` runs at a time: it inherits an flock'd file as
+///   its stdin, so the lock lasts exactly as long as the client, even after
+///   the render that started it has given up and exited;
+/// - a client is never killed. A killed client makes Emacs log "Process
+///   server <N> not running: connection broken by remote peer" once it gets
+///   round to replying, and a busy Emacs then collects one per poll;
+/// - a successful answer is cached for `fresh`, and after a timeout nobody
+///   asks again for `backoff`; meanwhile the last answer (if not older than
+///   `stale`) is reused.
+struct CachedEmacs {
+    dir: PathBuf,
+    program: PathBuf,
+    timeout: Duration,
+    fresh: Duration,
+    backoff: Duration,
+    stale: Duration,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+struct EmacsCache {
+    #[serde(default)]
+    fetched_at_ms: u64,
+    #[serde(default)]
+    timed_out_at_ms: u64,
+    #[serde(default)]
+    shell_pids: Vec<u32>,
+    #[serde(default)]
+    responses: Vec<EmacsProcess>,
+}
+
+impl CachedEmacs {
+    fn new(dir: PathBuf, program: PathBuf) -> Self {
+        Self {
+            dir,
+            program,
+            timeout: EMACS_TIMEOUT,
+            fresh: EMACS_FRESH,
+            backoff: EMACS_BACKOFF,
+            stale: EMACS_STALE,
+        }
+    }
+
+    fn cache_path(&self) -> PathBuf {
+        self.dir.join("emacs-cache.json")
+    }
+
+    fn query(&self, shell_pids: &[u32]) -> Vec<EmacsProcess> {
+        let now = now_ms();
+        let mut cache = self.read_cache();
+        let age = Duration::from_millis(now.saturating_sub(cache.fetched_at_ms));
+        let covers = shell_pids.iter().all(|pid| cache.shell_pids.contains(pid));
+        if covers && age < self.fresh {
+            return cache.responses;
+        }
+        let fallback = |cache: EmacsCache| {
+            if age < self.stale {
+                cache.responses
+            } else {
+                Vec::new()
+            }
+        };
+        let since_timeout = Duration::from_millis(now.saturating_sub(cache.timed_out_at_ms));
+        if cache.timed_out_at_ms != 0 && since_timeout < self.backoff {
+            return fallback(cache);
+        }
+
+        let Ok(lock) = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(self.dir.join("emacs.lock"))
+        else {
+            return fallback(cache);
+        };
+        if lock.try_lock_exclusive().is_err() {
+            // Another render's client is still waiting on Emacs.
+            return fallback(cache);
+        }
+        let reply_path = self.dir.join("emacs-reply");
+        let (Ok(child_lock), Ok(reply)) = (lock.try_clone(), File::create(&reply_path)) else {
+            return fallback(cache);
+        };
+        let Ok(mut child) = Command::new(&self.program)
+            .args([
+                "--alternate-editor=false",
+                "--eval",
+                &emacs_expression(shell_pids),
+            ])
+            .stdin(Stdio::from(child_lock))
+            .stdout(Stdio::from(reply))
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return fallback(cache);
+        };
+        // Our copy goes now; the lock lives on in the child's stdin.
+        drop(lock);
+
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let parsed = status
+                        .success()
+                        .then(|| fs::read_to_string(&reply_path).ok())
+                        .flatten()
+                        .and_then(|output| parse_emacs_output(&output));
+                    let Some(responses) = parsed else {
+                        return fallback(cache);
+                    };
+                    cache = EmacsCache {
+                        fetched_at_ms: now_ms(),
+                        timed_out_at_ms: 0,
+                        shell_pids: shell_pids.to_vec(),
+                        responses,
+                    };
+                    self.write_cache(&cache);
+                    return cache.responses;
+                }
+                Err(_) => return fallback(cache),
+                Ok(None) if started.elapsed() < self.timeout => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Ok(None) => {
+                    // Leave the client to finish on its own (see above).
+                    cache.timed_out_at_ms = now_ms();
+                    self.write_cache(&cache);
+                    return fallback(cache);
+                }
+            }
+        }
+    }
+
+    fn read_cache(&self) -> EmacsCache {
+        fs::read(self.cache_path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    fn write_cache(&self, cache: &EmacsCache) {
+        let path = self.cache_path();
+        let temp = path.with_extension(format!("json.{}", std::process::id()));
+        let written = serde_json::to_vec(cache)
+            .ok()
+            .is_some_and(|bytes| fs::write(&temp, bytes).is_ok());
+        if !written || fs::rename(&temp, &path).is_err() {
+            let _ = fs::remove_file(&temp);
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
 fn resolve_emacs_locations(
@@ -222,12 +402,6 @@ fn normalized_perspectives(perspectives: &[String]) -> Vec<String> {
     normalized
 }
 
-fn query_emacs(shell_pids: &[u32]) -> Option<Vec<EmacsProcess>> {
-    let expression = emacs_expression(shell_pids);
-    let output = capture_emacs(&expression)?;
-    parse_emacs_output(&output)
-}
-
 fn emacs_expression(shell_pids: &[u32]) -> String {
     let pids = shell_pids
         .iter()
@@ -276,35 +450,6 @@ fn emacs_expression(shell_pids: &[u32]) -> String {
 fn parse_emacs_output(output: &str) -> Option<Vec<EmacsProcess>> {
     let encoded: String = serde_json::from_str(output.trim()).ok()?;
     serde_json::from_str(&encoded).ok()
-}
-
-fn capture_emacs(expression: &str) -> Option<String> {
-    let mut child = Command::new("emacsclient")
-        .args(["--alternate-editor=false", "--eval", expression])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => {
-                let mut output = String::new();
-                child.stdout.take()?.read_to_string(&mut output).ok()?;
-                return Some(output);
-            }
-            Ok(Some(_)) | Err(_) => return None,
-            Ok(None) if started.elapsed() < EMACS_TIMEOUT => {
-                thread::sleep(Duration::from_millis(10));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -593,6 +738,95 @@ mod tests {
             expression.matches(')').count()
         );
         assert!(expression.ends_with("'(20 30)))))"));
+    }
+
+    /// A stand-in `emacsclient`: logs each call, optionally sleeps, then
+    /// prints one response for shell pid 20 the way emacsclient quotes it.
+    fn fake_emacsclient(dir: &Path, sleep: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("fake-emacsclient");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n\
+                 echo call >> '{calls}'\n\
+                 sleep {sleep}\n\
+                 echo done >> '{done}'\n\
+                 printf '%s\\n' '\"[{{\\\"shell_pid\\\":20,\\\"emacs_pid\\\":10,\\\"frames\\\":[],\\\"perspectives\\\":[\\\"~/p\\\"]}}]\"'\n",
+                calls = dir.join("calls").display(),
+                done = dir.join("done").display(),
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        script
+    }
+
+    fn line_count(path: &Path) -> usize {
+        fs::read_to_string(path).map_or(0, |text| text.lines().count())
+    }
+
+    fn cached(dir: &Path, program: PathBuf, timeout_ms: u64) -> CachedEmacs {
+        CachedEmacs {
+            timeout: Duration::from_millis(timeout_ms),
+            ..CachedEmacs::new(dir.to_path_buf(), program)
+        }
+    }
+
+    #[test]
+    fn cached_emacs_shares_one_answer_between_renders() {
+        let temp = tempfile::tempdir().unwrap();
+        let emacs = cached(temp.path(), fake_emacsclient(temp.path(), "0"), 3000);
+
+        let first = emacs.query(&[20]);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].perspectives, ["~/p"]);
+        let second = emacs.query(&[20]);
+        assert_eq!(second.len(), 1);
+        assert_eq!(line_count(&temp.path().join("calls")), 1);
+
+        // A pid the cached answer does not cover forces a new query.
+        emacs.query(&[20, 21]);
+        assert_eq!(line_count(&temp.path().join("calls")), 2);
+    }
+
+    #[test]
+    fn cached_emacs_never_kills_a_slow_client_and_backs_off() {
+        let temp = tempfile::tempdir().unwrap();
+        let emacs = cached(temp.path(), fake_emacsclient(temp.path(), "1"), 100);
+
+        assert!(emacs.query(&[20]).is_empty());
+        // The client is still running and holds the lock: no second client,
+        // even with the back-off out of the way.
+        let no_backoff = CachedEmacs {
+            backoff: Duration::ZERO,
+            ..cached(temp.path(), emacs.program.clone(), 100)
+        };
+        assert!(no_backoff.query(&[20]).is_empty());
+        assert_eq!(line_count(&temp.path().join("calls")), 1);
+
+        // It finishes on its own instead of being killed.
+        thread::sleep(Duration::from_millis(1500));
+        assert_eq!(line_count(&temp.path().join("done")), 1);
+
+        // Within the back-off nobody asks Emacs again.
+        assert!(emacs.query(&[20]).is_empty());
+        assert_eq!(line_count(&temp.path().join("calls")), 1);
+    }
+
+    #[test]
+    fn cached_emacs_reuses_the_last_answer_while_busy() {
+        let temp = tempfile::tempdir().unwrap();
+        let quick = cached(temp.path(), fake_emacsclient(temp.path(), "0"), 3000);
+        assert_eq!(quick.query(&[20]).len(), 1);
+
+        // The answer is no longer fresh and Emacs is now slow: the timed-out
+        // render still shows the previous location.
+        let slow = CachedEmacs {
+            fresh: Duration::ZERO,
+            ..cached(temp.path(), fake_emacsclient(temp.path(), "1"), 100)
+        };
+        assert_eq!(slow.query(&[20]).len(), 1);
     }
 
     #[test]
