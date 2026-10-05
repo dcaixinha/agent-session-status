@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Add user-visible changes below using Keep a Changelog categories. -->
 
+### Added
+
+- Added theme-specific status colors, `AGENT_SESSION_STATUS_COLOR_{WAITING,WORKING,IDLE}_{LIGHT,DARK}`, falling back to the plain variables. `watch` resolves the theme on every redraw and redraws when the stylesheet is repointed, so theme switches no longer need a bar reload.
+
 ## [0.1.2] - 2026-09-01
 
 

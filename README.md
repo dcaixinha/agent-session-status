@@ -307,6 +307,7 @@ The default icon mode uses Font Awesome question-circle for waiting, gears for w
 | `AGENT_SESSION_STATUS_COLOR_WAITING` | Waiting text/status tint. | `#e0af68` |
 | `AGENT_SESSION_STATUS_COLOR_WORKING` | Working text/status tint. | `#9ece6a` |
 | `AGENT_SESSION_STATUS_COLOR_IDLE` | Idle text/status tint. | `#7f849c` |
+| `AGENT_SESSION_STATUS_COLOR_{STATE}_{LIGHT,DARK}` | Theme-specific variant of a status color, e.g. `AGENT_SESSION_STATUS_COLOR_IDLE_DARK`; used when the active theme matches, otherwise the plain variable applies. `watch` resolves the theme on every redraw and redraws when the stylesheet is repointed, so a theme switch needs no restart. | Plain variable |
 | `AGENT_SESSION_STATUS_COLOR_FOREGROUND` | Explicit `asset --foreground-color` tint. | Parsed CSS or theme fallback |
 | `AGENT_SESSION_STATUS_ASSET_<PROVIDER>` | Absolute custom image path for both themes. | XDG/bundled lookup |
 | `AGENT_SESSION_STATUS_ASSET_<PROVIDER>_LIGHT` | Absolute light-theme custom image path. | Provider-wide value or lookup |
@@ -490,6 +491,7 @@ When `HYPRLAND_INSTANCE_SIGNATURE` exists, popup rendering runs `hyprctl -j clie
 Labels are taken first from `AGENT_SESSION_STATUS_WORKSPACE_NAMES`, a JSON object such as `{"1":"main","2":"browser"}`. Otherwise the program recursively searches the JSON file at `IRONBAR_CONFIG` for `type: "workspaces"` objects and their `name_map` strings. Waybar users should set the explicit environment variable when raw Hyprland workspace names are not sufficient.
 
 Emacs creates multiple graphical frames under one OS process, so PID ancestry alone cannot select a frame. Opt in with `--emacs` on `render` or `watch`, or set `AGENT_SESSION_STATUS_EMACS=true`. Only when an otherwise ambiguous ancestor is Emacs, the renderer makes one fail-soft, three-second `emacsclient` query for all affected sessions. It verifies the responding Emacs PID and maps each provider through its shell process to the exact Emacs buffer. A currently displayed buffer uses its unique frame title to select the matching Hyprland client and continues to render `Wayland workspace: ...`. A hidden buffer with `persp-mode` membership instead renders `Emacs: ...`, using its sorted perspective names with `$HOME` abbreviated to `~` and trailing slashes removed. The feature is disabled by default, makes no `emacsclient` call for direct terminal sessions, and does not infer locations from project paths or title substrings.
+
 
 Limitations: remote snapshots have no PID; malformed or non-JSON Ironbar configs yield no labels; failed `hyprctl` and opted-in `emacsclient` calls are ignored; unmapped clients are excluded; hidden Emacs buffers without `persp-mode` membership have no location label; and the standard `ext-workspace` protocol does not associate arbitrary toplevels with workspaces. Other compositors need their own external association strategy.
 

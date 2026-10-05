@@ -451,8 +451,16 @@ impl Colors {
     }
 }
 
+/// `AGENT_SESSION_STATUS_COLOR_{STATE}_{LIGHT|DARK}` for the active theme,
+/// then `AGENT_SESSION_STATUS_COLOR_{STATE}`, then `default`. The theme is
+/// resolved on every call, so a long-running `watch` follows theme switches.
 fn env_color(state: &str, default: &str) -> String {
-    std::env::var(format!("AGENT_SESSION_STATUS_COLOR_{state}"))
+    let themed = format!(
+        "AGENT_SESSION_STATUS_COLOR_{state}_{}",
+        crate::assets::active_theme().to_ascii_uppercase()
+    );
+    std::env::var(themed)
+        .or_else(|_| std::env::var(format!("AGENT_SESSION_STATUS_COLOR_{state}")))
         .unwrap_or_else(|_| default.to_owned())
 }
 

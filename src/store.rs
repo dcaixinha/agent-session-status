@@ -80,6 +80,13 @@ impl Store {
             let _ = tx.send(event);
         })?;
         watcher.watch(&self.dir, RecursiveMode::NonRecursive)?;
+        // Theme switches repoint the stylesheet (usually a symlink); colors and
+        // the theme are resolved per render, so redraw when it changes. Watch
+        // its directory, since the link itself is replaced. Best effort.
+        let stylesheet = crate::assets::active_stylesheet();
+        if let Some(parent) = stylesheet.parent().filter(|parent| parent.is_dir()) {
+            let _ = watcher.watch(parent, RecursiveMode::NonRecursive);
+        }
 
         self.print(
             format,
@@ -93,7 +100,10 @@ impl Store {
             match rx.recv_timeout(Duration::from_secs(10)) {
                 Ok(Ok(event))
                     if !matches!(event.kind, EventKind::Access(_))
-                        && event.paths.iter().any(|path| path == &self.state_path) =>
+                        && event
+                            .paths
+                            .iter()
+                            .any(|path| path == &self.state_path || path == &stylesheet) =>
                 {
                     // Coalesce atomic-write event bursts before reading.
                     std::thread::sleep(Duration::from_millis(15));

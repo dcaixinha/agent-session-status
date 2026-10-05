@@ -185,7 +185,7 @@ fn asset_filename(provider: Provider, theme: &str) -> String {
     }
 }
 
-fn active_theme() -> &'static str {
+pub(crate) fn active_theme() -> &'static str {
     match std::env::var("AGENT_SESSION_STATUS_THEME")
         .unwrap_or_else(|_| "auto".to_owned())
         .to_lowercase()
@@ -206,7 +206,7 @@ fn active_stylesheet_is_dark() -> bool {
         .is_some_and(|name| name.to_lowercase().contains("dark"))
 }
 
-fn active_stylesheet() -> PathBuf {
+pub(crate) fn active_stylesheet() -> PathBuf {
     std::env::var_os("IRONBAR_CSS")
         .map(PathBuf::from)
         .unwrap_or_else(|| config_dir().join("ironbar/style.css"))
